@@ -30,8 +30,8 @@ type Model struct {
 	keys    KeyMap
 
 	// File list state
-	files        []MockFile
-	selectedIdx  int
+	files       []diff.FileDiff
+	selectedIdx int
 
 	// Diff viewports
 	leftViewport  viewport.Model
@@ -43,10 +43,8 @@ type Model struct {
 	ready bool
 }
 
-// NewModel creates a new TUI model with mock data
-func NewModel() Model {
-	files := GetMockFiles()
-
+// NewModel creates a new TUI model with the given files
+func NewModel(files []diff.FileDiff) Model {
 	return Model{
 		files:      files,
 		keys:       DefaultKeyMap,
@@ -202,16 +200,18 @@ func (m *Model) renderDiffLines(lines []diff.Line, width int, isLeft bool) strin
 			numStyle = LineNumStyle
 		}
 
-		// For placeholder lines (empty context lines in side-by-side view)
-		if line.Type == diff.Context && content == "" {
+		// For placeholder lines (filler lines in side-by-side view)
+		if line.Type == diff.Placeholder {
 			numStyle = LineNumStyle.Foreground(lipgloss.Color("#333333"))
 			lineNum = "     "
-		}
-
-		// Truncate or pad content to fit width
-		if len(content) > width {
+			// Use filler pattern instead of blank space
+			content = strings.Repeat("░", width)
+			style = PlaceholderStyle
+		} else if len(content) > width {
+			// Truncate content to fit width
 			content = content[:width-1] + "~"
 		} else {
+			// Pad content to fit width
 			content = content + strings.Repeat(" ", width-len(content))
 		}
 
