@@ -142,12 +142,12 @@ func TestParseString_MultipleFiles(t *testing.T) {
 		t.Error("main.go should not be new")
 	}
 
-	// Second file: utils.go (new file)
-	if result.Files[1].Name != "utils.go" {
-		t.Errorf("expected second file 'utils.go', got '%s'", result.Files[1].Name)
+	// Second file: newfile.go (new file)
+	if result.Files[1].Name != "newfile.go" {
+		t.Errorf("expected second file 'newfile.go', got '%s'", result.Files[1].Name)
 	}
 	if !result.Files[1].IsNew {
-		t.Error("utils.go should be marked as new")
+		t.Error("newfile.go should be marked as new")
 	}
 }
 

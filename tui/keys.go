@@ -8,11 +8,10 @@ type KeyMap struct {
 	Down         key.Binding
 	Left         key.Binding
 	Right        key.Binding
+	Enter        key.Binding
 	Tab          key.Binding
 	ShiftTab     key.Binding
-	Enter        key.Binding
 	Quit         key.Binding
-	Help         key.Binding
 	PageUp       key.Binding
 	PageDown     key.Binding
 	HalfPageUp   key.Binding
@@ -32,11 +31,15 @@ var DefaultKeyMap = KeyMap{
 	),
 	Left: key.NewBinding(
 		key.WithKeys("h", "left"),
-		key.WithHelp("h/left", "left panel"),
+		key.WithHelp("h/left", "collapse/parent"),
 	),
 	Right: key.NewBinding(
 		key.WithKeys("l", "right"),
-		key.WithHelp("l/right", "right panel"),
+		key.WithHelp("l/right", "expand"),
+	),
+	Enter: key.NewBinding(
+		key.WithKeys("enter"),
+		key.WithHelp("enter", "toggle/select"),
 	),
 	Tab: key.NewBinding(
 		key.WithKeys("tab"),
@@ -46,17 +49,9 @@ var DefaultKeyMap = KeyMap{
 		key.WithKeys("shift+tab"),
 		key.WithHelp("shift+tab", "prev panel"),
 	),
-	Enter: key.NewBinding(
-		key.WithKeys("enter"),
-		key.WithHelp("enter", "select"),
-	),
 	Quit: key.NewBinding(
 		key.WithKeys("q", "ctrl+c"),
 		key.WithHelp("q", "quit"),
-	),
-	Help: key.NewBinding(
-		key.WithKeys("?"),
-		key.WithHelp("?", "help"),
 	),
 	PageUp: key.NewBinding(
 		key.WithKeys("pgup", "b"),
@@ -82,14 +77,14 @@ var DefaultKeyMap = KeyMap{
 
 // ShortHelp returns a short help string
 func (k KeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Tab, k.Up, k.Down, k.SyncToggle, k.Quit}
+	return []key.Binding{k.Tab, k.Up, k.Down, k.Left, k.Right, k.Quit}
 }
 
 // FullHelp returns the full help string
 func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Up, k.Down, k.PageUp, k.PageDown},
-		{k.Tab, k.ShiftTab, k.Left, k.Right},
-		{k.Enter, k.SyncToggle, k.Help, k.Quit},
+		{k.Up, k.Down, k.Left, k.Right, k.Enter},
+		{k.Tab, k.ShiftTab, k.PageUp, k.PageDown},
+		{k.HalfPageUp, k.HalfPageDown, k.SyncToggle, k.Quit},
 	}
 }

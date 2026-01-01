@@ -65,16 +65,32 @@ var (
 	FileItemStyle = lipgloss.NewStyle().
 			PaddingLeft(1)
 
+	// Darker blue background for selection (like lazygit)
 	FileItemSelectedStyle = lipgloss.NewStyle().
 				PaddingLeft(1).
-				Background(highlight).
-				Foreground(lipgloss.Color("#FFFFFF"))
+				Background(lipgloss.Color("#3d59a1")).
+				Foreground(lipgloss.Color("#FFFFFF")).
+				Bold(true)
 
 	AddCountStyle = lipgloss.NewStyle().
 			Foreground(addColor)
 
 	DelCountStyle = lipgloss.NewStyle().
 			Foreground(deleteColor)
+
+	// Status indicator styles (for tree view)
+	StatusModifiedStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#e5c07b")) // Yellow
+
+	StatusNewStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#56b6c2")) // Cyan
+
+	StatusDeletedStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#e06c75")) // Red
+
+	// Expand/collapse indicators for tree
+	ExpandedIndicator  = "▼"
+	CollapsedIndicator = "▶"
 )
 
 var HelpStyle = lipgloss.NewStyle().

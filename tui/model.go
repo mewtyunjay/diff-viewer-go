@@ -12,7 +12,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// FocusedPanel tracks which panel currently has focus
 type FocusedPanel int
 
 const (
@@ -21,7 +20,7 @@ const (
 	FocusRightDiff
 )
 
-// Model is the main application model
+// main application model
 type Model struct {
 	width  int
 	height int
@@ -29,35 +28,49 @@ type Model struct {
 	focused FocusedPanel
 	keys    KeyMap
 
-	// File list state
-	files       []diff.FileDiff
-	selectedIdx int
+	files        []diff.FileDiff
+	treeRoots    []*TreeNode   // Root nodes of file tree
+	visibleNodes []*TreeNode   // Flattened visible nodes for navigation
+	selectedIdx  int           // Index in visibleNodes
 
-	// Diff viewports
 	leftViewport  viewport.Model
 	rightViewport viewport.Model
 
-	// Synchronized scroll
 	syncScroll bool
 
 	ready bool
 }
 
-// NewModel creates a new TUI model with the given files
+// creates a new TUI model with the given files
 func NewModel(files []diff.FileDiff) Model {
+	treeRoots := BuildTree(files)
+	visibleNodes := FlattenVisible(treeRoots)
+
+	// Find initial selection (first file, not directory)
+	selectedIdx := 0
+	for i, node := range visibleNodes {
+		if node.IsFile() {
+			selectedIdx = i
+			break
+		}
+	}
+
 	return Model{
-		files:      files,
-		keys:       DefaultKeyMap,
-		syncScroll: true,
+		files:        files,
+		treeRoots:    treeRoots,
+		visibleNodes: visibleNodes,
+		selectedIdx:  selectedIdx,
+		keys:         DefaultKeyMap,
+		syncScroll:   true,
 	}
 }
 
-// Init implements tea.Model
+// implements tea.Model
 func (m Model) Init() tea.Cmd {
 	return nil
 }
 
-// Update implements tea.Model
+// implements tea.Model
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
@@ -88,12 +101,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, m.keys.Down):
 			if m.focused == FocusFileList {
-				if m.selectedIdx < len(m.files)-1 {
+				if m.selectedIdx < len(m.visibleNodes)-1 {
 					m.selectedIdx++
 					m.updateDiffContent()
 				}
 			} else {
 				m.scrollDown(1)
+			}
+
+		case key.Matches(msg, m.keys.Left):
+			if m.focused == FocusFileList {
+				m.handleTreeLeft()
+			}
+
+		case key.Matches(msg, m.keys.Right):
+			if m.focused == FocusFileList {
+				m.handleTreeRight()
+			}
+
+		case key.Matches(msg, m.keys.Enter):
+			if m.focused == FocusFileList {
+				m.handleTreeEnter()
 			}
 
 		case key.Matches(msg, m.keys.PageUp):
@@ -146,14 +174,91 @@ func (m *Model) scrollDown(lines int) {
 	}
 }
 
+// handleTreeLeft collapses directory or goes to parent
+func (m *Model) handleTreeLeft() {
+	if len(m.visibleNodes) == 0 || m.selectedIdx >= len(m.visibleNodes) {
+		return
+	}
+
+	node := m.visibleNodes[m.selectedIdx]
+
+	if node.IsDirectory() && node.Expanded {
+		// Collapse directory
+		node.ToggleExpanded()
+		m.refreshVisibleNodes()
+	} else if node.Parent != nil {
+		// Go to parent
+		m.selectNode(node.Parent)
+	}
+}
+
+// handleTreeRight expands directory
+func (m *Model) handleTreeRight() {
+	if len(m.visibleNodes) == 0 || m.selectedIdx >= len(m.visibleNodes) {
+		return
+	}
+
+	node := m.visibleNodes[m.selectedIdx]
+
+	if node.IsDirectory() && !node.Expanded {
+		node.ToggleExpanded()
+		m.refreshVisibleNodes()
+	}
+}
+
+// handleTreeEnter toggles directory or selects file
+func (m *Model) handleTreeEnter() {
+	if len(m.visibleNodes) == 0 || m.selectedIdx >= len(m.visibleNodes) {
+		return
+	}
+
+	node := m.visibleNodes[m.selectedIdx]
+
+	if node.IsDirectory() {
+		node.ToggleExpanded()
+		m.refreshVisibleNodes()
+	}
+	// For files, Enter could switch focus to diff panel (optional enhancement)
+}
+
+// refreshVisibleNodes rebuilds the visible nodes list after expand/collapse
+func (m *Model) refreshVisibleNodes() {
+	currentNode := m.visibleNodes[m.selectedIdx]
+	m.visibleNodes = FlattenVisible(m.treeRoots)
+
+	// Try to keep the same node selected
+	for i, node := range m.visibleNodes {
+		if node == currentNode {
+			m.selectedIdx = i
+			return
+		}
+	}
+
+	// If node is no longer visible (collapsed parent), select first visible
+	if m.selectedIdx >= len(m.visibleNodes) {
+		m.selectedIdx = max(0, len(m.visibleNodes)-1)
+	}
+}
+
+// selectNode finds and selects a specific node
+func (m *Model) selectNode(target *TreeNode) {
+	for i, node := range m.visibleNodes {
+		if node == target {
+			m.selectedIdx = i
+			m.updateDiffContent()
+			return
+		}
+	}
+}
+
 func (m *Model) updateViewportSizes() {
-	// Calculate panel widths
-	// Total width minus borders (2 chars per panel = 6 total)
+	// calculate panel widths
+	// total width minus borders (2 chars per panel = 6 total)
 	availableWidth := m.width - 6
 	fileListWidth := availableWidth * 20 / 100
 	diffPanelWidth := (availableWidth - fileListWidth) / 2
 
-	// Height minus borders and title
+	// height minus borders and title
 	panelHeight := m.height - 4
 
 	m.leftViewport = viewport.New(diffPanelWidth-2, panelHeight)
@@ -161,13 +266,22 @@ func (m *Model) updateViewportSizes() {
 }
 
 func (m *Model) updateDiffContent() {
-	if len(m.files) == 0 {
+	if len(m.visibleNodes) == 0 || m.selectedIdx >= len(m.visibleNodes) {
 		return
 	}
 
-	file := m.files[m.selectedIdx]
+	node := m.visibleNodes[m.selectedIdx]
 
-	// Calculate available width for content
+	// Only show diff for files, not directories
+	if node.File == nil {
+		m.leftViewport.SetContent("")
+		m.rightViewport.SetContent("")
+		return
+	}
+
+	file := node.File
+
+	// calculate available width for content
 	availableWidth := m.width - 6
 	fileListWidth := availableWidth * 20 / 100
 	diffPanelWidth := (availableWidth - fileListWidth) / 2
@@ -260,43 +374,18 @@ func (m Model) renderFileListPanel(width, height int) string {
 	}
 	title = lipgloss.PlaceHorizontal(width-2, lipgloss.Left, title)
 
-	// File list content
+	// File list content - render tree
 	var content strings.Builder
-	for i, file := range m.files {
-		var style lipgloss.Style
-		if i == m.selectedIdx {
-			style = FileItemSelectedStyle
-		} else {
-			style = FileItemStyle
-		}
+	contentWidth := width - 4 // Account for borders and padding
 
-		// File name
-		name := file.Name
-		if len(name) > width-12 {
-			name = name[:width-15] + "..."
-		}
-
-		// Add/delete counts
-		counts := fmt.Sprintf(" %s %s",
-			AddCountStyle.Render(fmt.Sprintf("+%d", file.AddCount)),
-			DelCountStyle.Render(fmt.Sprintf("-%d", file.DelCount)),
-		)
-
-		// Indicator for new/deleted files
-		indicator := ""
-		if file.IsNew {
-			indicator = AddCountStyle.Render("[new] ")
-		} else if file.IsDeleted {
-			indicator = DelCountStyle.Render("[del] ")
-		}
-
-		line := fmt.Sprintf("%s%s%s", indicator, name, counts)
-		line = style.Width(width - 2).Render(line)
+	for i, node := range m.visibleNodes {
+		isSelected := i == m.selectedIdx
+		line := m.renderTreeNode(node, contentWidth, isSelected)
 		content.WriteString(line + "\n")
 	}
 
 	// Pad remaining height
-	contentLines := len(m.files)
+	contentLines := len(m.visibleNodes)
 	remainingHeight := height - 3 - contentLines
 	if remainingHeight > 0 {
 		content.WriteString(strings.Repeat("\n", remainingHeight))
@@ -329,6 +418,68 @@ func (m Model) renderFileListPanel(width, height int) string {
 		Height(height).
 		Render(panelContent)
 }
+
+// renderTreeNode renders a single tree node with proper indentation
+func (m Model) renderTreeNode(node *TreeNode, width int, isSelected bool) string {
+	var sb strings.Builder
+
+	// Indentation (2 spaces per depth level)
+	indent := strings.Repeat("  ", node.Depth)
+	sb.WriteString(indent)
+
+	if node.IsDirectory() {
+		// Directory: show expand/collapse indicator and name
+		if node.Expanded {
+			sb.WriteString(ExpandedIndicator + " ")
+		} else {
+			sb.WriteString(CollapsedIndicator + " ")
+		}
+		sb.WriteString(node.Name + "/")
+	} else {
+		// File: show status, name, and counts
+		status := m.getFileStatus(node, isSelected)
+		sb.WriteString(status + " ")
+		sb.WriteString(node.Name)
+
+		if node.File != nil {
+			counts := fmt.Sprintf(" +%d -%d", node.File.AddCount, node.File.DelCount)
+			sb.WriteString(counts)
+		}
+	}
+
+	lineContent := sb.String()
+
+	if isSelected {
+		return FileItemSelectedStyle.Width(width).Render(lineContent)
+	}
+	return FileItemStyle.Width(width).Render(lineContent)
+}
+
+// getFileStatus returns the status indicator for a file
+func (m Model) getFileStatus(node *TreeNode, isSelected bool) string {
+	if node.File == nil {
+		return "  "
+	}
+
+	// When selected, return plain text (no ANSI codes) so selection style applies uniformly
+	if isSelected {
+		if node.File.IsNew {
+			return "??"
+		} else if node.File.IsDeleted {
+			return "D "
+		}
+		return "M "
+	}
+
+	// When not selected, use colored styles
+	if node.File.IsNew {
+		return StatusNewStyle.Render("??")
+	} else if node.File.IsDeleted {
+		return StatusDeletedStyle.Render("D ")
+	}
+	return StatusModifiedStyle.Render("M ")
+}
+
 
 func (m Model) renderDiffPanel(title string, content string, width, height int, isFocused bool) string {
 	// Title
