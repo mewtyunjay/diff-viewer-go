@@ -4,19 +4,19 @@ import "github.com/charmbracelet/bubbles/key"
 
 // KeyMap defines all key bindings
 type KeyMap struct {
-	Up           key.Binding
-	Down         key.Binding
-	Left         key.Binding
-	Right        key.Binding
-	Enter        key.Binding
-	Tab          key.Binding
-	ShiftTab     key.Binding
-	Quit         key.Binding
-	PageUp       key.Binding
-	PageDown     key.Binding
-	HalfPageUp   key.Binding
-	HalfPageDown key.Binding
-	SyncToggle   key.Binding
+	Up              key.Binding
+	Down            key.Binding
+	Left            key.Binding
+	Right           key.Binding
+	Enter           key.Binding
+	Tab             key.Binding
+	ShiftTab        key.Binding
+	Quit            key.Binding
+	PageUp          key.Binding
+	PageDown        key.Binding
+	HalfPageUp      key.Binding
+	HalfPageDown    key.Binding
+	SyncToggle key.Binding
 }
 
 // DefaultKeyMap returns the default key bindings

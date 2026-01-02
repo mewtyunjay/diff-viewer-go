@@ -17,14 +17,14 @@ const (
 
 // TreeNode represents a node in the file tree
 type TreeNode struct {
-	Name     string          // Just the filename/dirname, not full path
-	Path     string          // Full path for lookup
+	Name     string // Just the filename/dirname, not full path
+	Path     string // Full path for lookup
 	Type     NodeType
 	Children []*TreeNode
-	Expanded bool            // For directories (default: true)
-	File     *diff.FileDiff  // nil for directories
-	Depth    int             // Indentation level
-	Parent   *TreeNode       // For navigation (go to parent)
+	Expanded bool           // For directories (default: true)
+	File     *diff.FileDiff // nil for directories
+	Depth    int            // Indentation level
+	Parent   *TreeNode      // For navigation (go to parent)
 }
 
 // BuildTree creates a tree structure from a flat list of files
@@ -151,7 +151,6 @@ func (n *TreeNode) IsFile() bool {
 func (n *TreeNode) IsDirectory() bool {
 	return n.Type == NodeDirectory
 }
-
 
 // FindFirstFile finds the first file node in the tree (for initial selection)
 func FindFirstFile(roots []*TreeNode) *TreeNode {

@@ -8,9 +8,10 @@ var (
 
 	addColor    = lipgloss.Color("#2ECC71")
 	deleteColor = lipgloss.Color("#E74C3C")
-	addBg       = lipgloss.Color("#1E3A2F")
-	deleteBg    = lipgloss.Color("#3A1E1E")
 	contextFg   = lipgloss.Color("#AAAAAA")
+
+	addBg    = lipgloss.Color("#1E3A2F")
+	deleteBg = lipgloss.Color("#3A1E1E")
 	lineNumFg   = lipgloss.Color("#666666")
 )
 
