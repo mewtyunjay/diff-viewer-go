@@ -27,8 +27,13 @@ func New(opts ...Option) *Parser {
 	}
 }
 
-// ParseString parses a unified diff from a string
+// ParseString parses a unified diff from a string (method on Parser)
 func (p *Parser) ParseString(input string) (*diff.Result, error) {
+	return ParseString(input)
+}
+
+// ParseString parses a unified diff from a string (standalone function)
+func ParseString(input string) (*diff.Result, error) {
 	files, err := parseUnified(input)
 	if err != nil {
 		return nil, err
@@ -71,4 +76,9 @@ func (p *Parser) ParseGitDiff(ctx context.Context, args ...string) (*diff.Result
 // IsGitRepository checks if the working directory is a git repository
 func (p *Parser) IsGitRepository(ctx context.Context) bool {
 	return p.git.IsGitRepository(ctx)
+}
+
+// GitRunner returns the underlying git runner for direct git operations
+func (p *Parser) GitRunner() *GitRunner {
+	return p.git
 }

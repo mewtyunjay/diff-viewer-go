@@ -1,12 +1,15 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"diff-tui/diff"
+	"diff-tui/parser"
 
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -32,6 +35,7 @@ type Model struct {
 	treeRoots    []*TreeNode   // Root nodes of file tree
 	visibleNodes []*TreeNode   // Flattened visible nodes for navigation
 	selectedIdx  int           // Index in visibleNodes
+	rootName     string        // Name of the root folder (displayed in tree)
 
 	leftViewport  viewport.Model
 	rightViewport viewport.Model
@@ -39,11 +43,21 @@ type Model struct {
 	syncScroll bool
 
 	ready bool
+
+	// Git operations
+	gitRunner   *parser.GitRunner
+	diffArgs    []string        // Original diff args for refresh
+	stagedFiles map[string]bool // Track staged status by filepath
+
+	// Commit modal state
+	commitModalActive bool
+	commitInput       textinput.Model
+	commitError       string
 }
 
 // creates a new TUI model with the given files
-func NewModel(files []diff.FileDiff) Model {
-	treeRoots := BuildTree(files)
+func NewModel(files []diff.FileDiff, gitRunner *parser.GitRunner, diffArgs []string, rootName string) Model {
+	treeRoots := BuildTree(files, rootName)
 	visibleNodes := FlattenVisible(treeRoots)
 
 	// Find initial selection (first file, not directory)
@@ -55,13 +69,38 @@ func NewModel(files []diff.FileDiff) Model {
 		}
 	}
 
+	// Initialize commit input
+	ti := textinput.New()
+	ti.Placeholder = "Enter commit message..."
+	ti.CharLimit = 200
+	ti.Width = 50
+
+	// Initialize staged files map
+	stagedFiles := make(map[string]bool)
+
+	// Load currently staged files
+	if gitRunner != nil {
+		ctx := context.Background()
+		staged, err := gitRunner.GetStagedFiles(ctx)
+		if err == nil {
+			for _, f := range staged {
+				stagedFiles[f] = true
+			}
+		}
+	}
+
 	return Model{
 		files:        files,
 		treeRoots:    treeRoots,
 		visibleNodes: visibleNodes,
 		selectedIdx:  selectedIdx,
+		rootName:     rootName,
 		keys:         DefaultKeyMap,
 		syncScroll:   true,
+		gitRunner:    gitRunner,
+		diffArgs:     diffArgs,
+		stagedFiles:  stagedFiles,
+		commitInput:  ti,
 	}
 }
 
@@ -73,6 +112,31 @@ func (m Model) Init() tea.Cmd {
 // implements tea.Model
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
+
+	// Handle commit modal input first
+	if m.commitModalActive {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.String() {
+			case "enter":
+				// Execute commit
+				if m.commitInput.Value() != "" {
+					m.executeCommit()
+				}
+				return m, nil
+			case "esc":
+				// Close modal
+				m.closeCommitModal()
+				return m, nil
+			default:
+				// Pass to text input
+				var cmd tea.Cmd
+				m.commitInput, cmd = m.commitInput.Update(msg)
+				return m, cmd
+			}
+		}
+		return m, nil
+	}
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -88,6 +152,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, m.keys.SyncToggle):
 			m.syncScroll = !m.syncScroll
+
+		case key.Matches(msg, m.keys.Stage):
+			if m.focused == FocusFileList {
+				m.toggleStaging()
+			}
+
+		case key.Matches(msg, m.keys.Commit):
+			if m.focused == FocusFileList && m.hasStagedFiles() {
+				m.openCommitModal()
+			}
 
 		case key.Matches(msg, m.keys.Up):
 			if m.focused == FocusFileList {
@@ -297,41 +371,87 @@ func (m *Model) renderDiffLines(lines []diff.Line, width int, isLeft bool) strin
 	for i, line := range lines {
 		lineNum := fmt.Sprintf("%4d ", i+1)
 
-		// Determine style based on line type
-		var style lipgloss.Style
+		// Determine styles based on line type
+		var baseStyle, highlightStyle lipgloss.Style
 		var numStyle lipgloss.Style
-		content := line.Content
 
 		switch line.Type {
 		case diff.Add:
-			style = AddLineStyle
+			baseStyle = AddLineStyle
+			highlightStyle = AddHighlightStyle
 			numStyle = LineNumStyle.Foreground(lipgloss.Color("#2ECC71"))
 		case diff.Delete:
-			style = DeleteLineStyle
+			baseStyle = DeleteLineStyle
+			highlightStyle = DeleteHighlightStyle
 			numStyle = LineNumStyle.Foreground(lipgloss.Color("#E74C3C"))
 		default:
-			style = ContextLineStyle
+			baseStyle = ContextLineStyle
+			highlightStyle = ContextLineStyle // No highlight for context
 			numStyle = LineNumStyle
 		}
 
-		// For placeholder lines (filler lines in side-by-side view)
+		// Handle placeholder lines (filler lines in side-by-side view)
 		if line.Type == diff.Placeholder {
 			numStyle = LineNumStyle.Foreground(lipgloss.Color("#333333"))
 			lineNum = "     "
-			// Use filler pattern instead of blank space
-			content = strings.Repeat("░", width)
-			style = PlaceholderStyle
-		} else if len(content) > width {
-			// Truncate content to fit width
-			content = content[:width-1] + "~"
-		} else {
-			// Pad content to fit width
-			content = content + strings.Repeat(" ", width-len(content))
+			content := strings.Repeat("░", width)
+			sb.WriteString(numStyle.Render(lineNum))
+			sb.WriteString(PlaceholderStyle.Render(content))
+			sb.WriteString("\n")
+			continue
 		}
 
+		// Render line number
 		sb.WriteString(numStyle.Render(lineNum))
-		sb.WriteString(style.Render(content))
+
+		// Render content - with segments if available (word-level diff)
+		if len(line.Segments) > 0 {
+			sb.WriteString(m.renderSegmentedLine(line.Segments, baseStyle, highlightStyle, width))
+		} else {
+			// No segments - render entire content with base style
+			content := line.Content
+			if len(content) > width {
+				content = content[:width-1] + "~"
+			} else {
+				content = content + strings.Repeat(" ", width-len(content))
+			}
+			sb.WriteString(baseStyle.Render(content))
+		}
 		sb.WriteString("\n")
+	}
+
+	return sb.String()
+}
+
+// renderSegmentedLine renders a line with mixed highlighting for word-level diff
+func (m *Model) renderSegmentedLine(segments []diff.Segment, baseStyle, highlightStyle lipgloss.Style, width int) string {
+	var sb strings.Builder
+	totalLen := 0
+
+	for _, seg := range segments {
+		if totalLen >= width {
+			break
+		}
+
+		text := seg.Text
+		remaining := width - totalLen
+
+		// Truncate if needed
+		if len(text) > remaining {
+			text = text[:remaining-1] + "~"
+		}
+
+		if seg.Highlighted {
+			sb.WriteString(highlightStyle.Render(text))
+		} else {
+			sb.WriteString(baseStyle.Render(text))
+		}
+		totalLen += len(text)
+	}
+
+	// Pad remaining width with base style
+	if totalLen < width {
+		sb.WriteString(baseStyle.Render(strings.Repeat(" ", width-totalLen)))
 	}
 
 	return sb.String()
@@ -358,6 +478,11 @@ func (m Model) View() string {
 
 	// Join panels horizontally
 	main := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, middlePanel, rightPanel)
+
+	// Overlay commit modal if active
+	if m.commitModalActive {
+		return m.renderCommitModal(main)
+	}
 
 	return main
 }
@@ -461,8 +586,14 @@ func (m Model) getFileStatus(node *TreeNode, isSelected bool) string {
 		return "  "
 	}
 
+	// Check if file is staged
+	isStaged := m.stagedFiles[node.File.Name]
+
 	// When selected, return plain text (no ANSI codes) so selection style applies uniformly
 	if isSelected {
+		if isStaged {
+			return "S "
+		}
 		if node.File.IsNew {
 			return "??"
 		} else if node.File.IsDeleted {
@@ -472,6 +603,9 @@ func (m Model) getFileStatus(node *TreeNode, isSelected bool) string {
 	}
 
 	// When not selected, use colored styles
+	if isStaged {
+		return StatusStagedStyle.Render("S ")
+	}
 	if node.File.IsNew {
 		return StatusNewStyle.Render("??")
 	} else if node.File.IsDeleted {
@@ -524,4 +658,157 @@ func (m Model) renderDiffPanel(title string, content string, width, height int, 
 		Width(width).
 		Height(height).
 		Render(panelContent)
+}
+
+// toggleStaging toggles the staging status of the selected file
+func (m *Model) toggleStaging() {
+	if len(m.visibleNodes) == 0 || m.selectedIdx >= len(m.visibleNodes) {
+		return
+	}
+
+	node := m.visibleNodes[m.selectedIdx]
+	if node.File == nil || m.gitRunner == nil {
+		return
+	}
+
+	filepath := node.File.Name
+	ctx := context.Background()
+
+	if m.stagedFiles[filepath] {
+		// Unstage the file
+		err := m.gitRunner.UnstageFile(ctx, filepath)
+		if err == nil {
+			delete(m.stagedFiles, filepath)
+		}
+	} else {
+		// Stage the file
+		err := m.gitRunner.StageFile(ctx, filepath)
+		if err == nil {
+			m.stagedFiles[filepath] = true
+		}
+	}
+}
+
+// hasStagedFiles returns true if there are any staged files
+func (m *Model) hasStagedFiles() bool {
+	return len(m.stagedFiles) > 0
+}
+
+// openCommitModal opens the commit message modal
+func (m *Model) openCommitModal() {
+	m.commitModalActive = true
+	m.commitError = ""
+	m.commitInput.SetValue("")
+	m.commitInput.Focus()
+}
+
+// closeCommitModal closes the commit message modal
+func (m *Model) closeCommitModal() {
+	m.commitModalActive = false
+	m.commitError = ""
+	m.commitInput.Blur()
+}
+
+// executeCommit executes the git commit with the entered message
+func (m *Model) executeCommit() {
+	if m.gitRunner == nil {
+		m.commitError = "Git runner not available"
+		return
+	}
+
+	message := m.commitInput.Value()
+	if message == "" {
+		m.commitError = "Commit message cannot be empty"
+		return
+	}
+
+	ctx := context.Background()
+	err := m.gitRunner.Commit(ctx, message)
+	if err != nil {
+		m.commitError = err.Error()
+		return
+	}
+
+	// Close modal and refresh diff
+	m.closeCommitModal()
+	m.refreshDiff()
+}
+
+// refreshDiff re-runs git diff and rebuilds the file tree
+func (m *Model) refreshDiff() {
+	if m.gitRunner == nil {
+		return
+	}
+
+	ctx := context.Background()
+
+	// Re-run git diff
+	diffOutput, err := m.gitRunner.RunDiff(ctx, m.diffArgs...)
+	if err != nil {
+		return
+	}
+
+	// Re-parse the diff
+	result, err := parser.ParseString(diffOutput)
+	if err != nil {
+		return
+	}
+
+	// Update the model with new files
+	m.files = result.Files
+	m.treeRoots = BuildTree(m.files, m.rootName)
+	m.visibleNodes = FlattenVisible(m.treeRoots)
+
+	// Reset selection to first file
+	m.selectedIdx = 0
+	for i, node := range m.visibleNodes {
+		if node.IsFile() {
+			m.selectedIdx = i
+			break
+		}
+	}
+
+	// Reload staged files
+	m.stagedFiles = make(map[string]bool)
+	staged, err := m.gitRunner.GetStagedFiles(ctx)
+	if err == nil {
+		for _, f := range staged {
+			m.stagedFiles[f] = true
+		}
+	}
+
+	// Update diff content
+	m.updateDiffContent()
+}
+
+// renderCommitModal renders the commit message modal overlay
+func (m Model) renderCommitModal(background string) string {
+	// Modal title
+	title := ModalTitleStyle.Render("Commit Message")
+
+	// Text input
+	input := m.commitInput.View()
+
+	// Error message if any
+	var errorMsg string
+	if m.commitError != "" {
+		errorMsg = ModalErrorStyle.Render(m.commitError)
+	}
+
+	// Help text
+	help := ModalHelpStyle.Render("Enter: commit | Esc: cancel")
+
+	// Build modal content
+	var modalContent string
+	if errorMsg != "" {
+		modalContent = lipgloss.JoinVertical(lipgloss.Left, title, input, errorMsg, help)
+	} else {
+		modalContent = lipgloss.JoinVertical(lipgloss.Left, title, input, help)
+	}
+
+	// Style and size the modal
+	modal := ModalStyle.Width(60).Render(modalContent)
+
+	// Center modal on screen
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, modal)
 }

@@ -91,3 +91,97 @@ func (g *GitRunner) FindGitRoot(ctx context.Context) (string, error) {
 
 	return filepath.Clean(strings.TrimSpace(stdout.String())), nil
 }
+
+// StageFile stages a single file (git add)
+func (g *GitRunner) StageFile(ctx context.Context, filepath string) error {
+	cmd := exec.CommandContext(ctx, g.gitPath, "add", filepath)
+	if g.workDir != "" {
+		cmd.Dir = g.workDir
+	}
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	if err != nil {
+		return &GitError{
+			Args:   []string{"add", filepath},
+			Stderr: strings.TrimSpace(stderr.String()),
+			Err:    err,
+		}
+	}
+
+	return nil
+}
+
+// UnstageFile unstages a single file (git reset HEAD)
+func (g *GitRunner) UnstageFile(ctx context.Context, filepath string) error {
+	cmd := exec.CommandContext(ctx, g.gitPath, "reset", "HEAD", filepath)
+	if g.workDir != "" {
+		cmd.Dir = g.workDir
+	}
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	if err != nil {
+		return &GitError{
+			Args:   []string{"reset", "HEAD", filepath},
+			Stderr: strings.TrimSpace(stderr.String()),
+			Err:    err,
+		}
+	}
+
+	return nil
+}
+
+// Commit creates a commit with the given message
+func (g *GitRunner) Commit(ctx context.Context, message string) error {
+	cmd := exec.CommandContext(ctx, g.gitPath, "commit", "-m", message)
+	if g.workDir != "" {
+		cmd.Dir = g.workDir
+	}
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	if err != nil {
+		return &GitError{
+			Args:   []string{"commit", "-m", message},
+			Stderr: strings.TrimSpace(stderr.String()),
+			Err:    err,
+		}
+	}
+
+	return nil
+}
+
+// GetStagedFiles returns a list of currently staged file paths
+func (g *GitRunner) GetStagedFiles(ctx context.Context) ([]string, error) {
+	cmd := exec.CommandContext(ctx, g.gitPath, "diff", "--cached", "--name-only")
+	if g.workDir != "" {
+		cmd.Dir = g.workDir
+	}
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	if err != nil {
+		return nil, &GitError{
+			Args:   []string{"diff", "--cached", "--name-only"},
+			Stderr: strings.TrimSpace(stderr.String()),
+			Err:    err,
+		}
+	}
+
+	output := strings.TrimSpace(stdout.String())
+	if output == "" {
+		return nil, nil
+	}
+
+	return strings.Split(output, "\n"), nil
+}

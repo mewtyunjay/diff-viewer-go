@@ -12,7 +12,11 @@ var (
 
 	addBg    = lipgloss.Color("#1E3A2F")
 	deleteBg = lipgloss.Color("#3A1E1E")
-	lineNumFg   = lipgloss.Color("#666666")
+	lineNumFg = lipgloss.Color("#666666")
+
+	// Intense highlight colors for changed portions within a line
+	addHighlightBg    = lipgloss.Color("#2a5a3a")
+	deleteHighlightBg = lipgloss.Color("#5a2a2a")
 )
 
 var (
@@ -60,6 +64,17 @@ var (
 	PlaceholderStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#444444")).
 				Background(lipgloss.Color("#1a1a1a"))
+
+	// Highlight styles for word-level diff (changed portions within a line)
+	AddHighlightStyle = lipgloss.NewStyle().
+				Foreground(addColor).
+				Background(addHighlightBg).
+				Bold(true)
+
+	DeleteHighlightStyle = lipgloss.NewStyle().
+				Foreground(deleteColor).
+				Background(deleteHighlightBg).
+				Bold(true)
 )
 
 var (
@@ -96,3 +111,29 @@ var (
 
 var HelpStyle = lipgloss.NewStyle().
 	Foreground(lipgloss.Color("#626262"))
+
+// Modal styles for commit dialog
+var (
+	ModalStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(highlight).
+			Padding(1, 2)
+
+	ModalTitleStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#FFFFFF")).
+			MarginBottom(1)
+
+	ModalHelpStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#666666")).
+			MarginTop(1)
+
+	ModalErrorStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#E74C3C")).
+			MarginTop(1)
+
+	// Staged file indicator style
+	StatusStagedStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#2ECC71")). // Green for staged
+				Bold(true)
+)

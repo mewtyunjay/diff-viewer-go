@@ -4,19 +4,21 @@ import "github.com/charmbracelet/bubbles/key"
 
 // KeyMap defines all key bindings
 type KeyMap struct {
-	Up              key.Binding
-	Down            key.Binding
-	Left            key.Binding
-	Right           key.Binding
-	Enter           key.Binding
-	Tab             key.Binding
-	ShiftTab        key.Binding
-	Quit            key.Binding
-	PageUp          key.Binding
-	PageDown        key.Binding
-	HalfPageUp      key.Binding
-	HalfPageDown    key.Binding
-	SyncToggle key.Binding
+	Up           key.Binding
+	Down         key.Binding
+	Left         key.Binding
+	Right        key.Binding
+	Enter        key.Binding
+	Tab          key.Binding
+	ShiftTab     key.Binding
+	Quit         key.Binding
+	PageUp       key.Binding
+	PageDown     key.Binding
+	HalfPageUp   key.Binding
+	HalfPageDown key.Binding
+	SyncToggle   key.Binding
+	Stage        key.Binding
+	Commit       key.Binding
 }
 
 // DefaultKeyMap returns the default key bindings
@@ -73,11 +75,19 @@ var DefaultKeyMap = KeyMap{
 		key.WithKeys("s"),
 		key.WithHelp("s", "sync scroll"),
 	),
+	Stage: key.NewBinding(
+		key.WithKeys(" "),
+		key.WithHelp("space", "stage/unstage"),
+	),
+	Commit: key.NewBinding(
+		key.WithKeys("c"),
+		key.WithHelp("c", "commit"),
+	),
 }
 
 // ShortHelp returns a short help string
 func (k KeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Tab, k.Up, k.Down, k.Left, k.Right, k.Quit}
+	return []key.Binding{k.Tab, k.Up, k.Down, k.Stage, k.Commit, k.Quit}
 }
 
 // FullHelp returns the full help string
@@ -85,6 +95,6 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Left, k.Right, k.Enter},
 		{k.Tab, k.ShiftTab, k.PageUp, k.PageDown},
-		{k.HalfPageUp, k.HalfPageDown, k.SyncToggle, k.Quit},
+		{k.HalfPageUp, k.HalfPageDown, k.SyncToggle, k.Stage, k.Commit, k.Quit},
 	}
 }

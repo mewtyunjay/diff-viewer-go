@@ -28,14 +28,27 @@ type TreeNode struct {
 }
 
 // BuildTree creates a tree structure from a flat list of files
-func BuildTree(files []diff.FileDiff) []*TreeNode {
+func BuildTree(files []diff.FileDiff, rootName string) []*TreeNode {
 	if len(files) == 0 {
 		return nil
 	}
 
+	// Use provided root name or default to "."
+	if rootName == "" {
+		rootName = "."
+	}
+
+	// Create root node
+	root := &TreeNode{
+		Name:     rootName,
+		Path:     ".",
+		Type:     NodeDirectory,
+		Expanded: true,
+		Depth:    0,
+	}
+
 	// Map to track created directories
 	dirNodes := make(map[string]*TreeNode)
-	var roots []*TreeNode
 
 	for i := range files {
 		file := &files[i]
@@ -44,7 +57,7 @@ func BuildTree(files []diff.FileDiff) []*TreeNode {
 		// Split path into parts
 		parts := strings.Split(path, "/")
 
-		var parent *TreeNode
+		parent := root
 		currentPath := ""
 
 		// Create directory nodes as needed
@@ -64,15 +77,10 @@ func BuildTree(files []diff.FileDiff) []*TreeNode {
 						Type:     NodeDirectory,
 						Expanded: true, // Start expanded by default
 						Parent:   parent,
-						Depth:    j,
+						Depth:    j + 1, // +1 because root is at depth 0
 					}
 					dirNodes[currentPath] = node
-
-					if parent == nil {
-						roots = append(roots, node)
-					} else {
-						parent.Children = append(parent.Children, node)
-					}
+					parent.Children = append(parent.Children, node)
 				}
 				parent = dirNodes[currentPath]
 			} else {
@@ -83,25 +91,20 @@ func BuildTree(files []diff.FileDiff) []*TreeNode {
 					Type:   NodeFile,
 					File:   file,
 					Parent: parent,
-					Depth:  j,
+					Depth:  j + 1, // +1 because root is at depth 0
 				}
-
-				if parent == nil {
-					roots = append(roots, node)
-				} else {
-					parent.Children = append(parent.Children, node)
-				}
+				parent.Children = append(parent.Children, node)
 			}
 		}
 	}
 
 	// Sort all children: directories first, then alphabetically
-	sortChildren(roots)
+	sortChildren(root.Children)
 	for _, dir := range dirNodes {
 		sortChildren(dir.Children)
 	}
 
-	return roots
+	return []*TreeNode{root}
 }
 
 // sortChildren sorts nodes: directories first, then files, alphabetically within each group

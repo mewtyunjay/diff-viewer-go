@@ -77,6 +77,7 @@ func alignHunk(h hunk) ([]diff.Line, []diff.Line, int, int) {
 
 // alignBlock aligns a block of deletes and adds side by side
 // For modifications (delete followed by add), they appear on the same row
+// and word-level diff highlighting is computed for paired lines.
 func alignBlock(deletes, adds []diff.Line, left, right *[]diff.Line) {
 	maxLen := len(deletes)
 	if len(adds) > maxLen {
@@ -84,18 +85,30 @@ func alignBlock(deletes, adds []diff.Line, left, right *[]diff.Line) {
 	}
 
 	for i := 0; i < maxLen; i++ {
+		var leftLine, rightLine diff.Line
+
 		if i < len(deletes) {
-			*left = append(*left, deletes[i])
+			leftLine = deletes[i]
 		} else {
 			// Placeholder for add-only line
-			*left = append(*left, diff.Line{Type: diff.Placeholder, Content: ""})
+			leftLine = diff.Line{Type: diff.Placeholder, Content: ""}
 		}
 
 		if i < len(adds) {
-			*right = append(*right, adds[i])
+			rightLine = adds[i]
 		} else {
 			// Placeholder for delete-only line
-			*right = append(*right, diff.Line{Type: diff.Placeholder, Content: ""})
+			rightLine = diff.Line{Type: diff.Placeholder, Content: ""}
 		}
+
+		// Compute word-level diff for modification pairs (delete + add on same row)
+		if leftLine.Type == diff.Delete && rightLine.Type == diff.Add {
+			leftSegs, rightSegs := diff.ComputeWordDiff(leftLine.Content, rightLine.Content)
+			leftLine.Segments = leftSegs
+			rightLine.Segments = rightSegs
+		}
+
+		*left = append(*left, leftLine)
+		*right = append(*right, rightLine)
 	}
 }

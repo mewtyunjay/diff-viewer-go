@@ -11,18 +11,32 @@ func TestBuildTree_SingleFile(t *testing.T) {
 		{Name: "main.go", AddCount: 5, DelCount: 3},
 	}
 
-	roots := BuildTree(files)
+	roots := BuildTree(files, "")
 
 	if len(roots) != 1 {
 		t.Fatalf("expected 1 root, got %d", len(roots))
 	}
 
-	if roots[0].Name != "main.go" {
-		t.Errorf("expected name 'main.go', got '%s'", roots[0].Name)
+	// Root should be "."
+	if roots[0].Name != "." {
+		t.Errorf("expected root name '.', got '%s'", roots[0].Name)
 	}
 
-	if roots[0].Type != NodeFile {
-		t.Error("expected NodeFile type")
+	if roots[0].Type != NodeDirectory {
+		t.Error("expected NodeDirectory type for root")
+	}
+
+	// main.go should be a child of root
+	if len(roots[0].Children) != 1 {
+		t.Fatalf("expected 1 child in root, got %d", len(roots[0].Children))
+	}
+
+	if roots[0].Children[0].Name != "main.go" {
+		t.Errorf("expected child name 'main.go', got '%s'", roots[0].Children[0].Name)
+	}
+
+	if roots[0].Children[0].Type != NodeFile {
+		t.Error("expected NodeFile type for main.go")
 	}
 }
 
@@ -32,15 +46,25 @@ func TestBuildTree_NestedFiles(t *testing.T) {
 		{Name: "src/main.go", AddCount: 5, DelCount: 3},
 	}
 
-	roots := BuildTree(files)
+	roots := BuildTree(files, "")
 
 	if len(roots) != 1 {
-		t.Fatalf("expected 1 root (src/), got %d", len(roots))
+		t.Fatalf("expected 1 root (.), got %d", len(roots))
 	}
 
-	src := roots[0]
+	root := roots[0]
+	if root.Name != "." {
+		t.Errorf("expected root name '.', got '%s'", root.Name)
+	}
+
+	// Root should have 1 child: src/
+	if len(root.Children) != 1 {
+		t.Fatalf("expected 1 child in root, got %d", len(root.Children))
+	}
+
+	src := root.Children[0]
 	if src.Name != "src" {
-		t.Errorf("expected root name 'src', got '%s'", src.Name)
+		t.Errorf("expected child name 'src', got '%s'", src.Name)
 	}
 
 	if src.Type != NodeDirectory {
@@ -51,7 +75,7 @@ func TestBuildTree_NestedFiles(t *testing.T) {
 		t.Error("expected directory to be expanded by default")
 	}
 
-	// Should have 2 children: main.go and utils/
+	// src should have 2 children: main.go and utils/
 	if len(src.Children) != 2 {
 		t.Fatalf("expected 2 children in src, got %d", len(src.Children))
 	}
@@ -63,19 +87,30 @@ func TestBuildTree_MultipleRoots(t *testing.T) {
 		{Name: "src/main.go", AddCount: 5, DelCount: 3},
 	}
 
-	roots := BuildTree(files)
+	roots := BuildTree(files, "")
 
-	if len(roots) != 2 {
-		t.Fatalf("expected 2 roots, got %d", len(roots))
+	// Now there's only 1 root: "."
+	if len(roots) != 1 {
+		t.Fatalf("expected 1 root, got %d", len(roots))
+	}
+
+	root := roots[0]
+	if root.Name != "." {
+		t.Errorf("expected root name '.', got '%s'", root.Name)
+	}
+
+	// Root should have 2 children: src/ and README.md
+	if len(root.Children) != 2 {
+		t.Fatalf("expected 2 children in root, got %d", len(root.Children))
 	}
 
 	// Directories should come first (sorted)
-	if roots[0].Name != "src" {
-		t.Errorf("expected first root 'src', got '%s'", roots[0].Name)
+	if root.Children[0].Name != "src" {
+		t.Errorf("expected first child 'src', got '%s'", root.Children[0].Name)
 	}
 
-	if roots[1].Name != "README.md" {
-		t.Errorf("expected second root 'README.md', got '%s'", roots[1].Name)
+	if root.Children[1].Name != "README.md" {
+		t.Errorf("expected second child 'README.md', got '%s'", root.Children[1].Name)
 	}
 }
 
@@ -85,16 +120,20 @@ func TestFlattenVisible_Expanded(t *testing.T) {
 		{Name: "src/utils.go"},
 	}
 
-	roots := BuildTree(files)
+	roots := BuildTree(files, "")
 	visible := FlattenVisible(roots)
 
-	// Should show: src/, main.go, utils.go
-	if len(visible) != 3 {
-		t.Fatalf("expected 3 visible nodes, got %d", len(visible))
+	// Should show: ., src/, main.go, utils.go
+	if len(visible) != 4 {
+		t.Fatalf("expected 4 visible nodes, got %d", len(visible))
 	}
 
-	if visible[0].Name != "src" {
-		t.Errorf("expected first visible 'src', got '%s'", visible[0].Name)
+	if visible[0].Name != "." {
+		t.Errorf("expected first visible '.', got '%s'", visible[0].Name)
+	}
+
+	if visible[1].Name != "src" {
+		t.Errorf("expected second visible 'src', got '%s'", visible[1].Name)
 	}
 }
 
@@ -104,18 +143,24 @@ func TestFlattenVisible_Collapsed(t *testing.T) {
 		{Name: "src/utils.go"},
 	}
 
-	roots := BuildTree(files)
-	roots[0].Expanded = false // Collapse src/
+	roots := BuildTree(files, "")
+	// Collapse src/ (child of root)
+	src := roots[0].Children[0]
+	src.Expanded = false
 
 	visible := FlattenVisible(roots)
 
-	// Should only show: src/
-	if len(visible) != 1 {
-		t.Fatalf("expected 1 visible node, got %d", len(visible))
+	// Should show: ., src/
+	if len(visible) != 2 {
+		t.Fatalf("expected 2 visible nodes, got %d", len(visible))
 	}
 
-	if visible[0].Name != "src" {
-		t.Errorf("expected visible 'src', got '%s'", visible[0].Name)
+	if visible[0].Name != "." {
+		t.Errorf("expected first visible '.', got '%s'", visible[0].Name)
+	}
+
+	if visible[1].Name != "src" {
+		t.Errorf("expected second visible 'src', got '%s'", visible[1].Name)
 	}
 }
 
@@ -124,13 +169,14 @@ func TestTreeNode_Parent(t *testing.T) {
 		{Name: "src/main.go"},
 	}
 
-	roots := BuildTree(files)
+	roots := BuildTree(files, "")
 
 	if len(roots) != 1 {
 		t.Fatalf("expected 1 root, got %d", len(roots))
 	}
 
-	src := roots[0]
+	root := roots[0]
+	src := root.Children[0]
 	if len(src.Children) != 1 {
 		t.Fatalf("expected 1 child in src, got %d", len(src.Children))
 	}
@@ -140,8 +186,12 @@ func TestTreeNode_Parent(t *testing.T) {
 		t.Error("expected main.go's parent to be src")
 	}
 
-	if src.Parent != nil {
-		t.Error("expected src's parent to be nil")
+	if src.Parent != root {
+		t.Error("expected src's parent to be root")
+	}
+
+	if root.Parent != nil {
+		t.Error("expected root's parent to be nil")
 	}
 }
 
@@ -167,7 +217,7 @@ func TestFindFirstFile(t *testing.T) {
 		{Name: "src/main.go"},
 	}
 
-	roots := BuildTree(files)
+	roots := BuildTree(files, "")
 	first := FindFirstFile(roots)
 
 	if first == nil {
@@ -176,5 +226,26 @@ func TestFindFirstFile(t *testing.T) {
 
 	if first.Name != "main.go" {
 		t.Errorf("expected 'main.go', got '%s'", first.Name)
+	}
+}
+
+func TestBuildTree_CustomRootName(t *testing.T) {
+	files := []diff.FileDiff{
+		{Name: "main.go"},
+	}
+
+	roots := BuildTree(files, "my-project")
+
+	if len(roots) != 1 {
+		t.Fatalf("expected 1 root, got %d", len(roots))
+	}
+
+	if roots[0].Name != "my-project" {
+		t.Errorf("expected root name 'my-project', got '%s'", roots[0].Name)
+	}
+
+	// Path should still be "." for internal consistency
+	if roots[0].Path != "." {
+		t.Errorf("expected root path '.', got '%s'", roots[0].Path)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"diff-tui/parser"
 	"diff-tui/tui"
@@ -24,7 +25,14 @@ func main() {
 		return
 	}
 
-	model := tui.NewModel(result.Files)
+	// Get the git root folder name for display in the tree
+	rootName := ""
+	if gitRoot, err := p.GitRunner().FindGitRoot(ctx); err == nil {
+		rootName = filepath.Base(gitRoot)
+	}
+
+	// Pass GitRunner, args, and rootName to enable staging/commit features
+	model := tui.NewModel(result.Files, p.GitRunner(), args, rootName)
 	runTUI(model)
 }
 
